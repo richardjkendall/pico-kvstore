@@ -1080,7 +1080,16 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
 
     if ((bank_state[0] == KVSTORE_BANK_STATE_VALID) &&
         (bank_state[1] == KVSTORE_BANK_STATE_VALID)) {
-        ;  //
+        /* Both banks are valid, so pick the one with the newer master-record
+         * version. Without this, active_bank keeps whatever the scan loop
+         * above assigned last (always bank 1), and a device whose most
+         * recent garbage collection landed on bank 0 mounts the stale bank 1
+         * on its next boot. Because a bank is abandoned precisely when it
+         * fills, that stale bank is always at or near its boundary. */
+        if (bank_ver[0] != bank_ver[1]) {
+            /* Signed difference so a uint16_t wrap compares correctly. */
+            context->active_bank = ((int16_t)(bank_ver[0] - bank_ver[1]) > 0) ? 0 : 1;
+        }
     }
 
     /* Restore the version of whichever bank was mounted. Without this,
