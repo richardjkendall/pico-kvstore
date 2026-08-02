@@ -1,3 +1,37 @@
+## This fork
+
+This is a fork of [oyama/pico-kvstore](https://github.com/oyama/pico-kvstore).
+
+**What diverges from upstream.** The mount-time bank selection in
+`kvs_logkvs_create()` (`src/kvstore_logkvs.c`) is corrected: the on-flash
+master-record version is restored for the mounted bank instead of being
+left at zero, the newer of the two banks is selected by version when both
+are valid, and the RAM-index scan is bounded by the bank size instead of
+running unbounded. A fourth, self-contained commit adds a legacy tie-break
+helper for stores where both banks still read version 1 — the state every
+store predating the version fix is left in until its next garbage
+collection.
+
+**Why this fork exists.** The fix needs to travel with a normal `git clone`
+and `git submodule update`, not depend on a separate patch-application step
+that is easy to forget and whose absence silently reintroduces the original
+mount failure.
+
+**How divergence is tracked.** By git history against the `upstream` remote
+(`git diff upstream/main`), not by markers in the source. Every commit here
+is written to be mergeable upstream as-is.
+
+**Rebasing onto upstream.** Fetch `upstream`, rebase `main` onto
+`upstream/main`, rebuild the firmware that depends on this fork, and check
+with `nm` that the legacy tie-break helper (see `src/kvstore_logkvs.c`) is
+still present in the resulting binary. This is not done on a schedule —
+only when upstream ships something actually needed.
+
+Upstream PR: not yet submitted
+Upstream issue: not yet submitted
+
+---
+
 # pico-kvstore
 
 **Lightweight and Secure Key-Value Store for Raspberry Pi Pico**
