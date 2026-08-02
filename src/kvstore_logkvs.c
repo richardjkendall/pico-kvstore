@@ -954,7 +954,7 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
     int ret = KVSTORE_SUCCESS;
     uint32_t flags;
     uint32_t hash;
-    master_record_data_t master_rec;
+    master_record_data_t master_rec = {0};
     uint32_t next_offset;
 
     kvs_t *kvs = calloc(1, sizeof(kvs_t));
@@ -1026,6 +1026,9 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
     bank_state_t bank_state[KVSTORE_NUM_BANK];
 
     size_t _size = (size_t)-1;
+    /* Capture each bank's on-flash master-record version at read time so the
+     * selection below can compare them. */
+    uint16_t bank_ver[KVSTORE_NUM_BANK] = {0};
     for (uint8_t bank = 0; bank < KVSTORE_NUM_BANK; bank++) {
         bank_state[bank] = KVSTORE_BANK_STATE_NONE;
 
@@ -1044,7 +1047,20 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
         }
 
         bank_state[bank] = KVSTORE_BANK_STATE_VALID;
+        /* Only a clean read leaves master_rec trustworthy. The tolerated
+         * non-success returns above either bail out before the data buffer is
+         * touched (READ_FAILED) or fill it from a record that is not the
+         * master record (ITEM_NOT_FOUND on a foreign key at this offset), so
+         * reading .version on those paths would invent a version. Leaving it
+         * at 0 keeps this bank losing the comparison below rather than
+         * winning it with garbage — and a garbage version would persist,
+         * since the next garbage collection writes bank_version + 1 to flash. */
+        if (ret == KVSTORE_SUCCESS) {
+            bank_ver[bank] = master_rec.version;
+        }
 
+        /* Provisional: correct when exactly one bank is valid. The both-valid
+         * case is resolved properly below. */
         context->active_bank = bank;
     }
     if ((bank_state[0] == KVSTORE_BANK_STATE_INVALID) &&
@@ -1066,6 +1082,12 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
         (bank_state[1] == KVSTORE_BANK_STATE_VALID)) {
         ;  //
     }
+
+    /* Restore the version of whichever bank was mounted. Without this,
+     * context->bank_version stays at its calloc'd 0 and every
+     * garbage_collection() writes version 1, permanently defeating the
+     * comparison above. */
+    context->bank_version = bank_ver[context->active_bank];
 
     context->free_space_offset = _size;
     ret = build_ram_index(kvs);
