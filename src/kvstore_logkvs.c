@@ -1026,6 +1026,9 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
     bank_state_t bank_state[KVSTORE_NUM_BANK];
 
     size_t _size = (size_t)-1;
+    /* Capture each bank's on-flash master-record version at read time so the
+     * selection below can compare them. */
+    uint16_t bank_ver[KVSTORE_NUM_BANK] = {0};
     for (uint8_t bank = 0; bank < KVSTORE_NUM_BANK; bank++) {
         bank_state[bank] = KVSTORE_BANK_STATE_NONE;
 
@@ -1044,7 +1047,10 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
         }
 
         bank_state[bank] = KVSTORE_BANK_STATE_VALID;
+        bank_ver[bank] = master_rec.version;
 
+        /* Provisional: correct when exactly one bank is valid. The both-valid
+         * case is resolved properly below. */
         context->active_bank = bank;
     }
     if ((bank_state[0] == KVSTORE_BANK_STATE_INVALID) &&
@@ -1066,6 +1072,12 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
         (bank_state[1] == KVSTORE_BANK_STATE_VALID)) {
         ;  //
     }
+
+    /* Restore the version of whichever bank was mounted. Without this,
+     * context->bank_version stays at its calloc'd 0 and every
+     * garbage_collection() writes version 1, permanently defeating the
+     * comparison above. */
+    context->bank_version = bank_ver[context->active_bank];
 
     context->free_space_offset = _size;
     ret = build_ram_index(kvs);
