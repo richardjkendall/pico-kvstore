@@ -1088,7 +1088,16 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
      * comparison above. */
     context->bank_version = bank_ver[context->active_bank];
 
-    context->free_space_offset = _size;
+    /* _size is never updated inside the master-scan loop above — it stays at
+     * (size_t)-1, which gives build_ram_index() an unbounded scan window and
+     * causes read_bank() to return READ_FAILED when the log approaches the
+     * bank boundary. That READ_FAILED cascades through build_ram_index() to
+     * kvs_logkvs_create() returning NULL, so any device whose bank fills to
+     * within sizeof(record_header_t) of the boundary fails to mount on
+     * reboot. Bound the scan by the bank size so the loop exits cleanly at
+     * the boundary; build_ram_index() still finds the true free space via
+     * next_offset from the last valid record. */
+    context->free_space_offset = context->size;
     ret = build_ram_index(kvs);
     if ((ret != KVSTORE_SUCCESS) && (ret != KVSTORE_ERROR_INVALID_DATA_DETECTED)) {
         goto fail;
