@@ -554,7 +554,12 @@ static void scan_bank_log_end(kvs_t *kvs, uint8_t bank, uint32_t *log_end)
     uint32_t flags = 0;
 
     while (offset + sizeof(record_header_t) < context->size) {
-        int ret = read_record(kvs, bank, offset, context->key_buf, 0, 0, &actual_data_size, 0, true,
+        /* copy_key is false: only next_offset is consumed here, so there is no
+         * reason to copy each key out. read_record() then chunks the key
+         * through work_buf and only advances user_key_ptr without
+         * dereferencing it. key_buf is still passed rather than NULL because
+         * that pointer advance on NULL would be undefined. */
+        int ret = read_record(kvs, bank, offset, context->key_buf, 0, 0, &actual_data_size, 0, false,
                               false, false, false, &hash, &flags, &next_offset);
         if (ret != KVSTORE_SUCCESS)
             break;
@@ -983,7 +988,7 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
     int ret = KVSTORE_SUCCESS;
     uint32_t flags;
     uint32_t hash;
-    master_record_data_t master_rec;
+    master_record_data_t master_rec = {0};
     uint32_t next_offset;
 
     kvs_t *kvs = calloc(1, sizeof(kvs_t));
@@ -1076,7 +1081,17 @@ kvs_t *kvs_logkvs_create(blockdevice_t *bd) {
         }
 
         bank_state[bank] = KVSTORE_BANK_STATE_VALID;
-        bank_ver[bank] = master_rec.version;
+        /* Only a clean read leaves master_rec trustworthy. The tolerated
+         * non-success returns above either bail out before the data buffer is
+         * touched (READ_FAILED) or fill it from a record that is not the
+         * master record (ITEM_NOT_FOUND on a foreign key at this offset), so
+         * reading .version on those paths would invent a version. Leaving it
+         * at 0 keeps this bank losing the comparison below rather than
+         * winning it with garbage — and a garbage version would persist,
+         * since the next garbage collection writes bank_version + 1 to flash. */
+        if (ret == KVSTORE_SUCCESS) {
+            bank_ver[bank] = master_rec.version;
+        }
 
         /* Provisional: correct when exactly one bank is valid. The both-valid
          * case is resolved properly below. */
