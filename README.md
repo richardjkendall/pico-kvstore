@@ -10,7 +10,10 @@ are valid, and the RAM-index scan is bounded by the bank size instead of
 running unbounded. A fourth, self-contained commit adds a legacy tie-break
 helper for stores where both banks still read version 1 — the state every
 store predating the version fix is left in until its next garbage
-collection.
+collection. `tests/test_logkvs.c` carries a host-runnable regression case
+(`bank selection across a remount`) that fails on unpatched code — it lives on
+this branch, not only on the PR branch, so the commit this project's submodule
+pins is guarded by its own test.
 
 **Why this fork exists.** The fix needs to travel with a normal `git clone`
 and `git submodule update`, not depend on a separate patch-application step
@@ -22,10 +25,26 @@ mount failure.
 is written to be mergeable upstream as-is.
 
 **Rebasing onto upstream.** Fetch `upstream`, rebase `main` onto
-`upstream/main`, rebuild the firmware that depends on this fork, and check
-with `nm` that the legacy tie-break helper (see `src/kvstore_logkvs.c`) is
-still present in the resulting binary. This is not done on a schedule —
-only when upstream ships something actually needed.
+`upstream/main`, then **run the host test suite** — that is the real gate:
+
+```
+cmake -B build -DPICO_PLATFORM=host -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target unittest && ./build/tests/unittest
+```
+
+The `bank selection across a remount` case in `tests/test_logkvs.c` fails on
+unpatched code and passes on patched, so a rebase that silently mangles any
+of the four changes is caught. Then rebuild the firmware that depends on this
+fork. This is not done on a schedule — only when upstream ships something
+actually needed.
+
+Do **not** rely on `nm | grep scan_bank_log_end` as the check. Three of the
+four changes are one-liners that emit no symbol — including the RAM-index
+bound, whose loss makes `kvs_logkvs_create()` fail outright on a near-full
+bank — so that grep passes while the most consequential change is gone. It is
+also a `static` symbol, so `-flto`, `-Os` or a stripped ELF would report it
+missing when it is present. To see the whole delta at a glance instead:
+`git diff --stat upstream/main..HEAD -- src/kvstore_logkvs.c`.
 
 Upstream PR: https://github.com/oyama/pico-kvstore/pull/10
 Upstream issue: https://github.com/oyama/pico-kvstore/issues/9
