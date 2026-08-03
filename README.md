@@ -27,8 +27,8 @@ with `nm` that the legacy tie-break helper (see `src/kvstore_logkvs.c`) is
 still present in the resulting binary. This is not done on a schedule —
 only when upstream ships something actually needed.
 
-Upstream PR: not yet submitted
-Upstream issue: not yet submitted
+Upstream PR: https://github.com/oyama/pico-kvstore/pull/10
+Upstream issue: https://github.com/oyama/pico-kvstore/issues/9
 
 ---
 
